@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     # Apps
+    "celery_demonstration",
     "front_assets",
     "home",
     # Libs
