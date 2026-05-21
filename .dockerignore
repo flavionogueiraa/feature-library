@@ -1,0 +1,8 @@
+.venv_feature_library/
+venv/
+__pycache__/
+*.pyc
+db.sqlite3
+.git/
+node_modules/
+.vscode/
