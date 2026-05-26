@@ -19,6 +19,10 @@ urlpatterns = [
         "",
         include("home.urls"),
     ),
+    path(
+        "",
+        include("celery_demonstration.urls"),
+    ),
     # Regsitragion urls
     path(
         "",

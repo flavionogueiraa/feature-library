@@ -1,0 +1,406 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block extra_style %}
+<style>
+    .demo-card { height: 100%; }
+    .demo-card .card-title { display: flex; align-items: center; }
+    .demo-card .card-title .badge { margin-left: auto; font-size: 11px; }
+    .state-pill {
+        display: inline-block; padding: 2px 10px; border-radius: 12px;
+        font-size: 11px; font-weight: 600; text-transform: uppercase;
+        letter-spacing: .04em;
+    }
+    .state-PENDING  { background:#fff3cd; color:#856404; }
+    .state-PROGRESS { background:#cce5ff; color:#004085; }
+    .state-STARTED  { background:#cce5ff; color:#004085; }
+    .state-RETRY    { background:#ffe0b2; color:#8a4b00; }
+    .state-SUCCESS  { background:#d4edda; color:#155724; }
+    .state-FAILURE  { background:#f8d7da; color:#721c24; }
+    .event-log {
+        background:#1e1e2f; color:#c7c7d9; border-radius:8px; padding:12px 14px;
+        font-family: "SFMono-Regular", Consolas, monospace; font-size:12.5px;
+        height:320px; overflow-y:auto; line-height:1.6;
+    }
+    .event-log .ts { color:#6c6c8a; }
+    .event-log .ev-info { color:#7fd1ff; }
+    .event-log .ev-ok   { color:#7be3a0; }
+    .event-log .ev-warn { color:#ffcf7a; }
+    .event-log .ev-err  { color:#ff8b8b; }
+    .task-id-chip {
+        font-family: monospace; font-size:11px; background:#eef0f7;
+        padding:1px 6px; border-radius:4px; color:#5a5a7a;
+    }
+    .step-node {
+        border:1px solid #e6e8f0; border-radius:8px; padding:10px 12px;
+        margin-bottom:8px; transition:all .2s;
+    }
+    .step-node.active { border-color:#4b7bec; background:#f3f7ff; }
+    .step-node.done   { border-color:#2dce89; background:#f1fbf6; }
+    .parallel-bar { margin-bottom:10px; }
+    .parallel-bar .label { font-size:12px; display:flex; justify-content:space-between; }
+    .concept-hint { font-size:12.5px; color:#7b7b93; margin-bottom:12px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12 grid-margin">
+        <div class="card">
+            <div class="card-body">
+                <h3 class="card-title">Celery na prática 🚀</h3>
+                <p class="card-description">
+                    Dispare tasks reais e acompanhe ao vivo o que o Celery faz com elas.
+                    Cada cartão abaixo demonstra um conceito diferente. Tudo acontece de
+                    forma <strong>assíncrona</strong>: o Django responde na hora com um
+                    <em>task id</em> e o trabalho roda em segundo plano nos workers.
+                </p>
+                <a href="{{ flower_url }}" target="_blank" class="btn btn-outline-primary btn-sm">
+                    <i class="mdi mdi-flower"></i> Abrir o Flower (monitor de tasks)
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- 1. Assincronismo + progresso ao vivo -->
+    <div class="col-lg-6 grid-margin stretch-card">
+        <div class="card demo-card">
+            <div class="card-body">
+                <h4 class="card-title">
+                    1. Assincronismo + progresso
+                    <span class="badge badge-info">.delay()</span>
+                </h4>
+                <p class="concept-hint">
+                    Uma task longa (10 passos). O servidor não trava: ela reporta o
+                    progresso via <code>update_state()</code> e a página consulta esse
+                    estado por <em>polling</em>.
+                </p>
+                <button class="btn btn-primary btn-sm" id="btn-progress">
+                    <i class="mdi mdi-play"></i> Disparar task longa
+                </button>
+                <span class="ml-2" id="progress-state"></span>
+                <div class="mt-3" id="progress-id-wrap" style="display:none;">
+                    <small class="text-muted">task id:</small>
+                    <span class="task-id-chip" id="progress-id"></span>
+                </div>
+                <div class="progress mt-3" style="height:22px;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated"
+                         id="progress-bar" role="progressbar" style="width:0%;">0%</div>
+                </div>
+                <p class="mt-2 mb-0 text-muted" id="progress-msg" style="font-size:13px;"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. Retry automático -->
+    <div class="col-lg-6 grid-margin stretch-card">
+        <div class="card demo-card">
+            <div class="card-body">
+                <h4 class="card-title">
+                    2. Retry automático
+                    <span class="badge badge-warning">autoretry_for</span>
+                </h4>
+                <p class="concept-hint">
+                    Uma task que falha de propósito nas primeiras tentativas. O Celery
+                    a reagenda sozinho (<code>retry_backoff</code>) até ela se recuperar.
+                </p>
+                <button class="btn btn-warning btn-sm" id="btn-flaky">
+                    <i class="mdi mdi-restart"></i> Disparar task instável
+                </button>
+                <span class="ml-2" id="flaky-state"></span>
+                <div class="mt-3" id="flaky-id-wrap" style="display:none;">
+                    <small class="text-muted">task id:</small>
+                    <span class="task-id-chip" id="flaky-id"></span>
+                </div>
+                <ul class="mt-3 mb-0" id="flaky-attempts" style="font-size:13px; padding-left:18px;"></ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- 3. Chain -->
+    <div class="col-lg-6 grid-margin stretch-card">
+        <div class="card demo-card">
+            <div class="card-body">
+                <h4 class="card-title">
+                    3. Chain (sequência)
+                    <span class="badge badge-success">chain()</span>
+                </h4>
+                <p class="concept-hint">
+                    Pipeline ETL: <code>extract → transform → load</code>. Cada etapa
+                    recebe o resultado da anterior. Elas rodam <strong>em sequência</strong>.
+                </p>
+                <button class="btn btn-success btn-sm" id="btn-chain">
+                    <i class="mdi mdi-link-variant"></i> Disparar pipeline
+                </button>
+                <div class="mt-3" id="chain-steps"></div>
+                <p class="mb-0 text-muted" id="chain-result" style="font-size:13px;"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. Group -->
+    <div class="col-lg-6 grid-margin stretch-card">
+        <div class="card demo-card">
+            <div class="card-body">
+                <h4 class="card-title">
+                    4. Group (paralelo)
+                    <span class="badge badge-primary">group()</span>
+                </h4>
+                <p class="concept-hint">
+                    5 tasks disparadas de uma vez. Cada uma demora um tempo aleatório e
+                    termina em momentos diferentes — rodando <strong>em paralelo</strong>
+                    nos workers.
+                </p>
+                <button class="btn btn-info btn-sm" id="btn-group">
+                    <i class="mdi mdi-call-split"></i> Disparar em paralelo
+                </button>
+                <div class="mt-3" id="group-bars"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-12 grid-margin stretch-card">
+        <div class="card demo-card">
+            <div class="card-body">
+                <h4 class="card-title">
+                    Log de eventos
+                    <button class="btn btn-sm btn-outline-secondary ml-auto" id="btn-clear-log">limpar</button>
+                </h4>
+                <div class="event-log" id="event-log"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% csrf_token %}
+<script>
+(function () {
+    const csrftoken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    const POLL_MS = 800;
+
+    // ---- helpers -------------------------------------------------------
+    function post(url) {
+        return fetch(url, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrftoken },
+        }).then(r => r.json());
+    }
+    function get(url) { return fetch(url).then(r => r.json()); }
+
+    function statusUrl(id) {
+        return "{% url 'celery_demonstration:task_status' 'TASKID' %}".replace('TASKID', id);
+    }
+
+    function pill(state) {
+        return '<span class="state-pill state-' + state + '">' + state + '</span>';
+    }
+
+    function log(msg, kind) {
+        kind = kind || 'info';
+        const el = document.getElementById('event-log');
+        const ts = new Date().toLocaleTimeString();
+        const line = document.createElement('div');
+        line.innerHTML = '<span class="ts">' + ts + '</span> ' +
+            '<span class="ev-' + kind + '">' + msg + '</span>';
+        el.appendChild(line);
+        el.scrollTop = el.scrollHeight;
+    }
+    document.getElementById('btn-clear-log').onclick = function () {
+        document.getElementById('event-log').innerHTML = '';
+    };
+
+    // Polls a single task until it is ready. onUpdate gets every status payload.
+    function pollTask(id, onUpdate) {
+        return new Promise(function (resolve) {
+            (function tick() {
+                get(statusUrl(id)).then(function (data) {
+                    onUpdate(data);
+                    if (data.ready) { resolve(data); }
+                    else { setTimeout(tick, POLL_MS); }
+                });
+            })();
+        });
+    }
+
+    // ---- 1. progress ---------------------------------------------------
+    document.getElementById('btn-progress').onclick = function () {
+        this.disabled = true;
+        const btn = this;
+        const bar = document.getElementById('progress-bar');
+        document.getElementById('progress-msg').textContent = '';
+        log('Enviando <b>progress_task</b> para a fila...', 'info');
+
+        post("{% url 'celery_demonstration:dispatch_progress' %}").then(function (res) {
+            document.getElementById('progress-id-wrap').style.display = 'block';
+            document.getElementById('progress-id').textContent = res.task_id;
+            log('Django respondeu na hora com o id <b>' + res.task_id.slice(0, 8) + '…</b> — sem esperar a task terminar!', 'ok');
+
+            pollTask(res.task_id, function (data) {
+                document.getElementById('progress-state').innerHTML = pill(data.state);
+                const pct = (data.info && data.info.percent) || (data.state === 'SUCCESS' ? 100 : 0);
+                bar.style.width = pct + '%';
+                bar.textContent = pct + '%';
+                if (data.info && data.info.message) {
+                    document.getElementById('progress-msg').textContent = data.info.message;
+                }
+            }).then(function (data) {
+                bar.classList.remove('progress-bar-animated');
+                log('progress_task finalizada: <b>' + data.state + '</b> 🎉', 'ok');
+                btn.disabled = false;
+            });
+        });
+    };
+
+    // ---- 2. flaky / retry ---------------------------------------------
+    document.getElementById('btn-flaky').onclick = function () {
+        this.disabled = true;
+        const btn = this;
+        const list = document.getElementById('flaky-attempts');
+        list.innerHTML = '';
+        const seen = {};
+        log('Enviando <b>flaky_task</b> (vai falhar de propósito)...', 'warn');
+
+        post("{% url 'celery_demonstration:dispatch_flaky' %}").then(function (res) {
+            document.getElementById('flaky-id-wrap').style.display = 'block';
+            document.getElementById('flaky-id').textContent = res.task_id;
+
+            pollTask(res.task_id, function (data) {
+                document.getElementById('flaky-state').innerHTML = pill(data.state);
+                const attempt = data.info && data.info.attempt;
+                if (attempt !== undefined && attempt !== null && !seen[attempt]) {
+                    seen[attempt] = true;
+                    const li = document.createElement('li');
+                    li.textContent = 'Tentativa #' + (attempt + 1) + ' em execução...';
+                    list.appendChild(li);
+                    if (attempt > 0) {
+                        log('O Celery reagendou a task: tentativa #' + (attempt + 1), 'warn');
+                    }
+                }
+            }).then(function (data) {
+                const li = document.createElement('li');
+                if (data.successful) {
+                    li.innerHTML = '<b style="color:#2dce89">' + (data.info.message || 'Sucesso!') + '</b>';
+                    log('flaky_task se recuperou via retry: <b>SUCCESS</b> ✅', 'ok');
+                } else {
+                    li.innerHTML = '<b style="color:#e74c3c">Esgotou as retentativas: ' + (data.info.message || 'falhou') + '</b>';
+                    log('flaky_task falhou definitivamente após os retries', 'err');
+                }
+                list.appendChild(li);
+                btn.disabled = false;
+            });
+        });
+    };
+
+    // ---- 3. chain ------------------------------------------------------
+    document.getElementById('btn-chain').onclick = function () {
+        this.disabled = true;
+        const btn = this;
+        const wrap = document.getElementById('chain-steps');
+        document.getElementById('chain-result').textContent = '';
+        log('Disparando <b>chain</b>: extract → transform → load', 'info');
+
+        post("{% url 'celery_demonstration:dispatch_chain' %}").then(function (res) {
+            wrap.innerHTML = '';
+            res.labels.forEach(function (label, i) {
+                wrap.insertAdjacentHTML('beforeend',
+                    '<div class="step-node" id="step-' + i + '">' +
+                    '<i class="mdi mdi-circle-outline"></i> ' + label +
+                    ' <span class="float-right" id="step-state-' + i + '"></span></div>');
+            });
+
+            // As etapas rodam em sequência: acompanhamos uma de cada vez.
+            let i = 0;
+            (function next() {
+                if (i >= res.task_ids.length) {
+                    log('chain concluído por completo ✅', 'ok');
+                    btn.disabled = false;
+                    return;
+                }
+                const node = document.getElementById('step-' + i);
+                node.classList.add('active');
+                pollTask(res.task_ids[i], function (data) {
+                    document.getElementById('step-state-' + i).innerHTML = pill(data.state);
+                }).then(function (data) {
+                    node.classList.remove('active');
+                    node.classList.add('done');
+                    node.querySelector('i').className = 'mdi mdi-check-circle';
+                    log('Etapa <b>' + res.labels[i] + '</b> concluída', 'ok');
+                    if (i === res.task_ids.length - 1 && data.info) {
+                        document.getElementById('chain-result').innerHTML =
+                            'Resultado final: <b>' + JSON.stringify(data.info) + '</b>';
+                    }
+                    i++;
+                    next();
+                });
+            })();
+        });
+    };
+
+    // ---- 4. group ------------------------------------------------------
+    document.getElementById('btn-group').onclick = function () {
+        this.disabled = true;
+        const btn = this;
+        const wrap = document.getElementById('group-bars');
+        log('Disparando <b>group</b> de 5 tasks em paralelo', 'info');
+
+        post("{% url 'celery_demonstration:dispatch_group' %}").then(function (res) {
+            wrap.innerHTML = '';
+            res.task_ids.forEach(function (id, i) {
+                wrap.insertAdjacentHTML('beforeend',
+                    '<div class="parallel-bar">' +
+                    '<div class="label"><span>task ' + res.numbers[i] + '²</span>' +
+                    '<span id="gstate-' + i + '"></span></div>' +
+                    '<div class="progress" style="height:16px;">' +
+                    '<div class="progress-bar progress-bar-striped progress-bar-animated bg-info" ' +
+                    'id="gbar-' + i + '" style="width:100%;"></div></div></div>');
+            });
+
+            let done = 0;
+            res.task_ids.forEach(function (id, i) {
+                pollTask(id, function (data) {
+                    document.getElementById('gstate-' + i).innerHTML = pill(data.state);
+                }).then(function (data) {
+                    const bar = document.getElementById('gbar-' + i);
+                    bar.classList.remove('progress-bar-animated', 'progress-bar-striped');
+                    bar.classList.add('bg-success');
+                    bar.textContent = data.info.result + ' (' + data.info.duration + 's)';
+                    done++;
+                    log('task ' + res.numbers[i] + '² terminou (' + data.info.duration + 's)', 'ok');
+                    if (done === res.task_ids.length) {
+                        log('Todas as tasks do group terminaram ✅', 'ok');
+                        btn.disabled = false;
+                    }
+                });
+            });
+        });
+    };
+
+    // ---- 5. beat heartbeats (auto-poll) -------------------------------
+    let lastBeatCount = 0;
+    function refreshHeartbeats() {
+        get("{% url 'celery_demonstration:heartbeats' %}").then(function (data) {
+            const list = document.getElementById('heartbeat-list');
+            if (!data.beats.length) { return; }
+            if (data.beats.length > lastBeatCount) {
+                log('💓 Celery Beat disparou uma task agendada', 'info');
+                lastBeatCount = data.beats.length;
+            }
+            list.innerHTML = data.beats.map(function (b) {
+                return '<li><i class="mdi mdi-heart-pulse text-danger"></i> ' +
+                    '<span class="text-muted">' + b.time + '</span> — ' + b.message + '</li>';
+            }).join('');
+        }).catch(function () {});
+    }
+    refreshHeartbeats();
+    setInterval(refreshHeartbeats, 3000);
+})();
+</script>
+{% endblock %}

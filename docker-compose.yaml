@@ -6,8 +6,12 @@ services:
     command: sh start_local.sh
     ports:
       - "8000:8000"
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379
+      CELERY_RESULT_BACKEND: redis://redis:6379
     depends_on:
       - postgres
+      - redis
   flower:
     build:
       context: .
@@ -15,10 +19,15 @@ services:
     command: celery -A feature_library flower --port=5555
     ports:
       - "5555:5555"
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379
+      CELERY_RESULT_BACKEND: redis://redis:6379
+    depends_on:
+      - redis
   redis:
     image: redis:latest
     ports:
-      - "63799:63799"
+      - "6379:6379"
   postgres:
     image: postgres:latest
     environment:
@@ -32,6 +41,19 @@ services:
       context: .
       dockerfile: Dockerfile
     command: celery -A feature_library worker --loglevel=info
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379
+      CELERY_RESULT_BACKEND: redis://redis:6379
     depends_on:
       - redis
       - postgres
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: celery -A feature_library beat --loglevel=info
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379
+      CELERY_RESULT_BACKEND: redis://redis:6379
+    depends_on:
+      - redis

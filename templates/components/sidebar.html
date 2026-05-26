@@ -63,11 +63,19 @@
             <span class="nav-link">Navigation</span>
         </li>
         <li class="nav-item menu-items">
-            <a class="nav-link" href="index.html">
+            <a class="nav-link" href="{% url 'home' %}">
                 <span class="menu-icon">
                     <i class="mdi mdi-speedometer"></i>
                 </span>
                 <span class="menu-title">Dashboard</span>
+            </a>
+        </li>
+        <li class="nav-item menu-items">
+            <a class="nav-link" href="{% url 'celery_demonstration:demo' %}">
+                <span class="menu-icon">
+                    <i class="mdi mdi-rocket"></i>
+                </span>
+                <span class="menu-title">Celery Demo</span>
             </a>
         </li>
         <li class="nav-item menu-items">
